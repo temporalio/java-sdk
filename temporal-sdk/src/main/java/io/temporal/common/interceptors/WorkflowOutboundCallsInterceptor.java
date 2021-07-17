@@ -22,13 +22,8 @@ package io.temporal.common.interceptors;
 import io.temporal.activity.ActivityOptions;
 import io.temporal.activity.LocalActivityOptions;
 import io.temporal.api.common.v1.WorkflowExecution;
-import io.temporal.workflow.ChildWorkflowOptions;
-import io.temporal.workflow.ContinueAsNewOptions;
-import io.temporal.workflow.DynamicQueryHandler;
-import io.temporal.workflow.DynamicSignalHandler;
-import io.temporal.workflow.Functions;
+import io.temporal.workflow.*;
 import io.temporal.workflow.Functions.Func;
-import io.temporal.workflow.Promise;
 import java.lang.reflect.Type;
 import java.time.Duration;
 import java.util.List;
@@ -483,7 +478,18 @@ public interface WorkflowOutboundCallsInterceptor {
 
   void upsertSearchAttributes(Map<String, Object> searchAttributes);
 
-  Object newThread(Runnable runnable, boolean detached, String name);
+  /**
+   * Intercepts creation of the workflow child thread.
+   *
+   * <p>Please note, that "workflow child thread" and "child workflow" are different and independent
+   * concepts.
+   *
+   * @param runnable thread function to run
+   * @param detached if this thread is detached from the parent {@link CancellationScope}
+   * @param name name of the thread
+   * @return created WorkflowThread
+   */
+  Object newChildThread(Runnable runnable, boolean detached, String name);
 
   long currentTimeMillis();
 }

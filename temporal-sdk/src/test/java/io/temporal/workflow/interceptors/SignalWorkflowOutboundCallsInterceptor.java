@@ -161,8 +161,8 @@ public class SignalWorkflowOutboundCallsInterceptor implements WorkflowOutboundC
   }
 
   @Override
-  public Object newThread(Runnable runnable, boolean detached, String name) {
-    return next.newThread(runnable, detached, name);
+  public Object newChildThread(Runnable runnable, boolean detached, String name) {
+    return next.newChildThread(runnable, detached, name);
   }
 
   @Override

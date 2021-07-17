@@ -104,6 +104,14 @@ public class TracingWorkerInterceptor implements WorkerInterceptor {
         trace.add("handleQuery " + input.getQueryName());
         return super.handleQuery(input);
       }
+
+      @Override
+      public Object newWorkflowMethodThread(Runnable runnable, String name) {
+        if (!Workflow.isReplaying()) {
+          trace.add("newThread " + name);
+        }
+        return next.newWorkflowMethodThread(runnable, name);
+      }
     };
   }
 
@@ -336,11 +344,11 @@ public class TracingWorkerInterceptor implements WorkerInterceptor {
     }
 
     @Override
-    public Object newThread(Runnable runnable, boolean detached, String name) {
+    public Object newChildThread(Runnable runnable, boolean detached, String name) {
       if (!Workflow.isReplaying()) {
         trace.add("newThread " + name);
       }
-      return next.newThread(runnable, detached, name);
+      return next.newChildThread(runnable, detached, name);
     }
 
     @Override

@@ -19,15 +19,15 @@
 
 package io.temporal.internal.sync;
 
-import io.temporal.common.interceptors.WorkflowOutboundCallsInterceptor;
 import io.temporal.internal.replay.WorkflowExecutorCache;
 import io.temporal.workflow.CancellationScope;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
+import javax.annotation.Nullable;
 
 /**
  * Executes code passed to {@link #newRunner(Runnable)} as well as threads created from it using
- * {@link WorkflowInternal#newThread(boolean, Runnable)} deterministically. Requires use of provided
+ * {@link WorkflowThread#newThread(Runnable, boolean)} deterministically. Requires use of provided
  * wrappers for synchronization and notification instead of native ones.
  */
 interface DeterministicRunner {
@@ -118,9 +118,11 @@ interface DeterministicRunner {
   void executeInWorkflowThread(String name, Runnable r);
 
   /**
-   * Creates a new instance of a workflow thread. To be called only from another workflow thread.
+   * Creates a new instance of a workflow child thread. To be called only from another workflow
+   * thread.
    */
-  WorkflowThread newThread(Runnable runnable, boolean detached, String name);
+  WorkflowThread newWorkflowThread(Runnable runnable, boolean detached, @Nullable String name);
 
-  void setInterceptorHead(WorkflowOutboundCallsInterceptor interceptorHead);
+  /** Creates a new instance of a workflow callback thread. */
+  WorkflowThread newCallbackThread(Runnable runnable, @Nullable String name);
 }

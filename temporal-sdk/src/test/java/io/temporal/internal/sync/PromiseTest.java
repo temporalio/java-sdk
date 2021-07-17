@@ -55,11 +55,10 @@ public class PromiseTest {
             () -> {
               CompletablePromise<Boolean> f = Workflow.newPromise();
               trace.add("root begin");
-              WorkflowInternal.newThread(
-                      false, () -> f.completeExceptionally(new IllegalArgumentException("foo")))
+              WorkflowThread.newThread(
+                      () -> f.completeExceptionally(new IllegalArgumentException("foo")), false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         try {
                           f.get();
@@ -69,7 +68,8 @@ public class PromiseTest {
                           assertEquals(IllegalArgumentException.class, e.getClass());
                           trace.add("thread1 get failure");
                         }
-                      })
+                      },
+                      false)
                   .start();
               trace.add("root done");
             });
@@ -88,7 +88,7 @@ public class PromiseTest {
             () -> {
               CompletablePromise<String> f = Workflow.newPromise();
               trace.add("root begin");
-              WorkflowInternal.newThread(false, () -> f.complete("thread1")).start();
+              WorkflowThread.newThread(() -> f.complete("thread1"), false).start();
               trace.add(f.get());
               trace.add("root done");
             });
@@ -107,7 +107,7 @@ public class PromiseTest {
             () -> {
               CompletablePromise<String> f = Workflow.newPromise();
               trace.add("root begin");
-              WorkflowInternal.newThread(false, () -> f.complete("thread1")).start();
+              WorkflowThread.newThread(() -> f.complete("thread1"), false).start();
               trace.add(f.cancellableGet());
               trace.add("root done");
             });
@@ -202,25 +202,25 @@ public class PromiseTest {
               CompletablePromise<Boolean> f2 = Workflow.newPromise();
               CompletablePromise<Boolean> f3 = Workflow.newPromise();
 
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread1 begin");
                         assertTrue(f1.get());
                         trace.add("thread1 f1");
                         f2.complete(true);
                         trace.add("thread1 done");
-                      })
+                      },
+                      false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread2 begin");
                         assertTrue(f2.get());
                         trace.add("thread2 f2");
                         f3.complete(true);
                         trace.add("thread2 done");
-                      })
+                      },
+                      false)
                   .start();
               f1.complete(true);
               assertFalse(f1.complete(false));
@@ -330,29 +330,29 @@ public class PromiseTest {
               CompletablePromise<String> f2 = Workflow.newPromise();
               CompletablePromise<String> f3 = Workflow.newPromise();
 
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread1 begin");
                         f1.complete("value1");
                         trace.add("thread1 done");
-                      })
+                      },
+                      false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread3 begin");
                         f3.complete("value3");
                         trace.add("thread3 done");
-                      })
+                      },
+                      false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread2 begin");
                         f2.complete("value2");
                         trace.add("thread2 done");
-                      })
+                      },
+                      false)
                   .start();
               List<Promise<String>> promises = new ArrayList<>();
               promises.add(f1);
@@ -430,29 +430,29 @@ public class PromiseTest {
               CompletablePromise<String> f2 = Workflow.newPromise();
               CompletablePromise<String> f3 = Workflow.newPromise();
 
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread1 begin");
                         f1.complete("value1");
                         trace.add("thread1 done");
-                      })
+                      },
+                      false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread3 begin");
                         f3.complete("value3");
                         trace.add("thread3 done");
-                      })
+                      },
+                      false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread2 begin");
                         f2.complete("value2");
                         trace.add("thread2 done");
-                      })
+                      },
+                      false)
                   .start();
               List<Promise<String>> promises = new ArrayList<>();
               promises.add(f1);
@@ -490,29 +490,29 @@ public class PromiseTest {
               CompletablePromise<Integer> f2 = Workflow.newPromise();
               CompletablePromise<Boolean> f3 = Workflow.newPromise();
 
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread1 begin");
                         f1.complete("value1");
                         trace.add("thread1 done");
-                      })
+                      },
+                      false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread3 begin");
                         f3.complete(true);
                         trace.add("thread3 done");
-                      })
+                      },
+                      false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread2 begin");
                         f2.complete(111);
                         trace.add("thread2 done");
-                      })
+                      },
+                      false)
                   .start();
               trace.add("root before allOf");
               assertFalse(f1.isCompleted());
@@ -550,29 +550,29 @@ public class PromiseTest {
               CompletablePromise<Integer> f2 = Workflow.newPromise();
               CompletablePromise<Boolean> f3 = Workflow.newPromise();
 
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread1 begin");
                         f1.complete("value1");
                         trace.add("thread1 done");
-                      })
+                      },
+                      false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread3 begin");
                         f3.complete(true);
                         trace.add("thread3 done");
-                      })
+                      },
+                      false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread2 begin");
                         f2.complete(111);
                         trace.add("thread2 done");
-                      })
+                      },
+                      false)
                   .start();
               trace.add("root before allOf");
               assertFalse(f1.isCompleted());

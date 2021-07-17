@@ -28,7 +28,7 @@ import java.util.concurrent.Future;
 import java.util.function.Supplier;
 
 /** Thread that is scheduled deterministically by {@link DeterministicRunner}. */
-interface WorkflowThread extends CancellationScope {
+public interface WorkflowThread extends CancellationScope {
 
   /**
    * Block current thread until unblockCondition is evaluated to true. This method is intended for
@@ -60,8 +60,8 @@ interface WorkflowThread extends CancellationScope {
     return (WorkflowThread)
         currentThreadInternal()
             .getWorkflowContext()
-            .getWorkflowInterceptor()
-            .newThread(runnable, detached, name);
+            .getWorkflowOutboundInterceptor()
+            .newChildThread(runnable, detached, name);
   }
 
   void start();

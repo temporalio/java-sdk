@@ -394,7 +394,14 @@ class WorkflowThreadImpl implements WorkflowThread {
     // These numbers might change if implementation changes.
     int omitTop = 5;
     int omitBottom = 7;
+    // TODO it's not a good idea to rely on the name to understand the thread type. Instead of that
+    // we would better
+    // assign an explicit enum to the threads. This will be especially important when we refactor
+    // root and workflow-method
+    // thread names into names that will include workflowId
     if (DeterministicRunnerImpl.WORKFLOW_ROOT_THREAD_NAME.equals(getName())) {
+      omitBottom = 11;
+    } else if (DeterministicRunnerImpl.WORKFLOW_MAIN_THREAD_NAME.equals(getName())) {
       omitBottom = 11;
     }
     StackTraceElement[] stackTrace = thread.getStackTrace();

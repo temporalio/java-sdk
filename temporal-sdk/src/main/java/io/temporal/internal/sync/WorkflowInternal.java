@@ -20,6 +20,7 @@
 package io.temporal.internal.sync;
 
 import static io.temporal.internal.sync.AsyncInternal.AsyncMarker;
+import static io.temporal.internal.sync.DeterministicRunnerImpl.currentThreadInternal;
 
 import com.uber.m3.tally.Scope;
 import io.temporal.activity.ActivityOptions;
@@ -75,16 +76,12 @@ import org.slf4j.LoggerFactory;
 public final class WorkflowInternal {
   public static final int DEFAULT_VERSION = -1;
 
-  public static WorkflowThread newThread(boolean ignoreParentCancellation, Runnable runnable) {
-    return WorkflowThread.newThread(runnable, ignoreParentCancellation);
-  }
-
-  public static WorkflowThread newThread(
-      boolean ignoreParentCancellation, String name, Runnable runnable) {
-    if (name == null) {
-      throw new NullPointerException("name cannot be null");
-    }
-    return WorkflowThread.newThread(runnable, ignoreParentCancellation, name);
+  public static WorkflowThread newWorkflowMethodThread(Runnable runnable, String name) {
+    return (WorkflowThread)
+        currentThreadInternal()
+            .getWorkflowContext()
+            .getWorkflowInboundInterceptor()
+            .newWorkflowMethodThread(runnable, name);
   }
 
   public static Promise<Void> newTimer(Duration duration) {
@@ -231,7 +228,10 @@ public final class WorkflowInternal {
     }
     InvocationHandler invocationHandler =
         ActivityInvocationHandler.newInstance(
-            activityInterface, options, mergedActivityOptionsMap, context.getWorkflowInterceptor());
+            activityInterface,
+            options,
+            mergedActivityOptionsMap,
+            context.getWorkflowOutboundInterceptor());
     return ActivityInvocationHandlerBase.newProxy(activityInterface, invocationHandler);
   }
 
@@ -347,7 +347,7 @@ public final class WorkflowInternal {
   private static WorkflowOutboundCallsInterceptor getWorkflowInterceptor() {
     return DeterministicRunnerImpl.currentThreadInternal()
         .getWorkflowContext()
-        .getWorkflowInterceptor();
+        .getWorkflowOutboundInterceptor();
   }
 
   static SyncWorkflowContext getRootWorkflowContext() {

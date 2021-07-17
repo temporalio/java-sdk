@@ -31,8 +31,6 @@ import io.temporal.api.common.v1.WorkflowType;
 import io.temporal.api.failure.v1.Failure;
 import io.temporal.common.context.ContextPropagator;
 import io.temporal.common.converter.DataConverter;
-import io.temporal.common.interceptors.WorkflowOutboundCallsInterceptor;
-import io.temporal.common.interceptors.WorkflowOutboundCallsInterceptorBase;
 import io.temporal.failure.CanceledFailure;
 import io.temporal.internal.WorkflowThreadMarker;
 import io.temporal.internal.context.ContextThreadLocal;
@@ -54,7 +52,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
@@ -71,6 +68,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+import javax.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,7 +80,9 @@ class DeterministicRunnerImpl implements DeterministicRunner {
   private static final int ROOT_THREAD_PRIORITY = 0;
   private static final int CALLBACK_THREAD_PRIORITY = 10;
   private static final int WORKFLOW_THREAD_PRIORITY = 20000000;
-  static final String WORKFLOW_ROOT_THREAD_NAME = "workflow-method";
+
+  static final String WORKFLOW_ROOT_THREAD_NAME = "workflow-root";
+  static final String WORKFLOW_MAIN_THREAD_NAME = "workflow-method";
 
   private static final Logger log = LoggerFactory.getLogger(DeterministicRunnerImpl.class);
   private static final ThreadLocal<WorkflowThread> currentThreadThreadLocal = new ThreadLocal<>();
@@ -92,7 +92,10 @@ class DeterministicRunnerImpl implements DeterministicRunner {
       new TreeSet<>((t1, t2) -> Ints.compare(t1.getPriority(), t2.getPriority()));
   // Values from RunnerLocalInternal
   private final Map<RunnerLocalInternal<?>, Object> runnerLocalMap = new HashMap<>();
-  private final List<WorkflowThread> threadsToAdd = Collections.synchronizedList(new ArrayList<>());
+  private final List<WorkflowThread> workflowThreadsToAdd =
+      Collections.synchronizedList(new ArrayList<>());
+  private final List<WorkflowThread> callbackThreadsToAdd =
+      Collections.synchronizedList(new ArrayList<>());
   private final List<NamedRunnable> toExecuteInWorkflowThread = new ArrayList<>();
   private final Lock lock = new ReentrantLock();
   private final Runnable rootRunnable;
@@ -113,18 +116,6 @@ class DeterministicRunnerImpl implements DeterministicRunner {
       this.runnable = runnable;
     }
   }
-
-  /**
-   * Used to create a root workflow thread through the interceptor chain. The default value is used
-   * only in the unit tests.
-   */
-  private WorkflowOutboundCallsInterceptor interceptorHead =
-      new WorkflowOutboundCallsInterceptorBase(null) {
-        @Override
-        public Object newThread(Runnable runnable, boolean detached, String name) {
-          return DeterministicRunnerImpl.this.newThread(runnable, detached, name);
-        }
-      };
 
   static WorkflowThread currentThreadInternal() {
     WorkflowThread result = currentThreadThreadLocal.get();
@@ -171,13 +162,6 @@ class DeterministicRunnerImpl implements DeterministicRunner {
     this(getDefaultThreadPool(), newDummySyncWorkflowContext(), root, null);
   }
 
-  private static ThreadPoolExecutor getDefaultThreadPool() {
-    ThreadPoolExecutor result =
-        new ThreadPoolExecutor(0, 1000, 1, TimeUnit.SECONDS, new SynchronousQueue<>());
-    result.setThreadFactory(r -> new Thread(r, "deterministic runner thread"));
-    return result;
-  }
-
   DeterministicRunnerImpl(
       ExecutorService threadPool, SyncWorkflowContext workflowContext, Runnable root) {
     this(threadPool, workflowContext, root, null);
@@ -197,24 +181,13 @@ class DeterministicRunnerImpl implements DeterministicRunner {
     this.rootRunnable = root;
   }
 
-  private WorkflowThreadImpl newRootWorkflowThread(
-      Runnable runnable, boolean detached, String name) {
-    return new WorkflowThreadImpl(
-        threadPool,
-        this,
-        name,
-        ROOT_THREAD_PRIORITY,
-        detached,
-        runnerCancellationScope,
-        runnable,
-        cache,
-        getContextPropagators(),
-        getPropagatedContexts());
-  }
-
   private static SyncWorkflowContext newDummySyncWorkflowContext() {
-    return new SyncWorkflowContext(
-        new DummyReplayWorkflowContext(), DataConverter.getDefaultInstance(), null, null, null);
+    SyncWorkflowContext context =
+        new SyncWorkflowContext(
+            new DummyReplayWorkflowContext(), DataConverter.getDefaultInstance(), null, null, null);
+    context.initHeadOutboundCallsInterceptor(context);
+    context.initHeadInboundCallsInterceptor(new BaseRootWorkflowInboundCallsInterceptor(context));
+    return context;
   }
 
   SyncWorkflowContext getWorkflowContext() {
@@ -224,10 +197,7 @@ class DeterministicRunnerImpl implements DeterministicRunner {
   @Override
   public void runUntilAllBlocked(long deadlockDetectionTimeout) {
     if (rootWorkflowThread == null) {
-      // TODO: workflow instance specific thread name
-      rootWorkflowThread =
-          (WorkflowThread)
-              interceptorHead.newThread(rootRunnable, false, WORKFLOW_ROOT_THREAD_NAME);
+      rootWorkflowThread = newRootThread(rootRunnable);
       threads.add(rootWorkflowThread);
       rootWorkflowThread.start();
     }
@@ -244,24 +214,9 @@ class DeterministicRunnerImpl implements DeterministicRunner {
       boolean progress;
       outerLoop:
       do {
-        threadsToAdd.clear();
         if (!toExecuteInWorkflowThread.isEmpty()) {
-          List<WorkflowThread> callbackThreads = new ArrayList<>(toExecuteInWorkflowThread.size());
           for (NamedRunnable nr : toExecuteInWorkflowThread) {
-            WorkflowThread thread =
-                new WorkflowThreadImpl(
-                    threadPool,
-                    this,
-                    nr.name,
-                    CALLBACK_THREAD_PRIORITY
-                        + (addedThreads++), // maintain the order in toExecuteInWorkflowThread
-                    false,
-                    runnerCancellationScope,
-                    nr.runnable,
-                    cache,
-                    getContextPropagators(),
-                    getPropagatedContexts());
-            callbackThreads.add(thread);
+            workflowContext.getWorkflowInboundInterceptor().newCallbackThread(nr.runnable, nr.name);
           }
 
           // It is important to prepend threads as there are callbacks
@@ -269,10 +224,10 @@ class DeterministicRunnerImpl implements DeterministicRunner {
           // Otherwise signal might be never processed if it was received
           // after workflow decided to close.
           // Adding the callbacks in the same order as they appear in history.
-
-          for (int i = callbackThreads.size() - 1; i >= 0; i--) {
-            threads.add(callbackThreads.get(i));
+          for (int i = callbackThreadsToAdd.size() - 1; i >= 0; i--) {
+            threads.add(callbackThreadsToAdd.get(i));
           }
+          callbackThreadsToAdd.clear();
         }
         toExecuteInWorkflowThread.clear();
         progress = false;
@@ -296,9 +251,8 @@ class DeterministicRunnerImpl implements DeterministicRunner {
           close();
           throw WorkflowInternal.wrap(unhandledException);
         }
-        for (WorkflowThread c : threadsToAdd) {
-          threads.add(c);
-        }
+        threads.addAll(workflowThreadsToAdd);
+        workflowThreadsToAdd.clear();
       } while (progress && !threads.isEmpty());
     } catch (PotentialDeadlockException e) {
       StringBuilder dump = new StringBuilder();
@@ -333,7 +287,6 @@ class DeterministicRunnerImpl implements DeterministicRunner {
   }
 
   @Override
-  @SuppressWarnings("unchecked")
   public Object getExitValue() {
     lock.lock();
     try {
@@ -367,10 +320,10 @@ class DeterministicRunnerImpl implements DeterministicRunner {
       return;
     }
     try {
-      for (WorkflowThread c : threadsToAdd) {
+      for (WorkflowThread c : workflowThreadsToAdd) {
         threads.add(c);
       }
-      threadsToAdd.clear();
+      workflowThreadsToAdd.clear();
 
       for (WorkflowThread c : threads) {
         threadFutures.add(c.stopNow());
@@ -439,38 +392,78 @@ class DeterministicRunnerImpl implements DeterministicRunner {
     }
   }
 
-  /** To be called only from another workflow thread. */
-  public WorkflowThread newThread(Runnable runnable, boolean detached, String name) {
+  /** Creates a new instance of a root workflow thread. */
+  private WorkflowThread newRootThread(Runnable runnable) {
+    String name = WORKFLOW_ROOT_THREAD_NAME;
+    // TODO: workflow instance specific thread name
+    // String name = "workflow[" + workflowContext.getContext().getWorkflowId() + "]-root";
+    if (rootWorkflowThread != null) {
+      throw new IllegalStateException(
+          "newRootThread can be called only if there is no existing root workflow thread");
+    }
+    rootWorkflowThread =
+        new WorkflowThreadImpl(
+            threadPool,
+            this,
+            name,
+            ROOT_THREAD_PRIORITY,
+            false,
+            runnerCancellationScope,
+            runnable,
+            cache,
+            getContextPropagators(),
+            getPropagatedContexts());
+    return rootWorkflowThread;
+  }
+
+  @Override
+  public WorkflowThread newWorkflowThread(
+      Runnable runnable, boolean detached, @Nullable String name) {
     if (name == null) {
       name = "workflow[" + workflowContext.getContext().getWorkflowId() + "]-" + addedThreads;
     }
-    WorkflowThread result;
     if (rootWorkflowThread == null) {
-      rootWorkflowThread = newRootWorkflowThread(runnable, detached, name);
-      result = rootWorkflowThread;
-    } else {
-      checkWorkflowThreadOnly();
-      checkClosed();
-      result =
-          new WorkflowThreadImpl(
-              threadPool,
-              this,
-              name,
-              WORKFLOW_THREAD_PRIORITY + (addedThreads++),
-              detached,
-              CancellationScopeImpl.current(),
-              runnable,
-              cache,
-              getContextPropagators(),
-              getPropagatedContexts());
+      throw new IllegalStateException(
+          "newChildThread can be called only with existing root workflow thread");
     }
-    threadsToAdd.add(result); // This is synchronized collection.
+    checkWorkflowThreadOnly();
+    checkClosed();
+    WorkflowThread result =
+        new WorkflowThreadImpl(
+            threadPool,
+            this,
+            name,
+            WORKFLOW_THREAD_PRIORITY + (addedThreads++),
+            detached,
+            CancellationScopeImpl.current(),
+            runnable,
+            cache,
+            getContextPropagators(),
+            getPropagatedContexts());
+    workflowThreadsToAdd.add(result); // This is synchronized collection.
     return result;
   }
 
   @Override
-  public void setInterceptorHead(WorkflowOutboundCallsInterceptor interceptorHead) {
-    this.interceptorHead = Objects.requireNonNull(interceptorHead);
+  public WorkflowThread newCallbackThread(Runnable runnable, @Nullable String name) {
+    if (name == null) {
+      name = "workflow[" + workflowContext.getContext().getWorkflowId() + "]-" + addedThreads;
+    }
+    WorkflowThread result =
+        new WorkflowThreadImpl(
+            threadPool,
+            this,
+            name,
+            CALLBACK_THREAD_PRIORITY
+                + (addedThreads++), // maintain the order in toExecuteInWorkflowThread
+            false,
+            runnerCancellationScope,
+            runnable,
+            cache,
+            getContextPropagators(),
+            getPropagatedContexts());
+    callbackThreadsToAdd.add(result);
+    return result;
   }
 
   /**
@@ -545,6 +538,13 @@ class DeterministicRunnerImpl implements DeterministicRunner {
     } else {
       return workflowContext.getContext().getContextPropagators();
     }
+  }
+
+  private static ThreadPoolExecutor getDefaultThreadPool() {
+    ThreadPoolExecutor result =
+        new ThreadPoolExecutor(0, 1000, 1, TimeUnit.SECONDS, new SynchronousQueue<>());
+    result.setThreadFactory(r -> new Thread(r, "deterministic runner thread"));
+    return result;
   }
 
   private static final class DummyReplayWorkflowContext implements ReplayWorkflowContext {

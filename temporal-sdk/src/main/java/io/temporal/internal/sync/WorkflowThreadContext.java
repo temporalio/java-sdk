@@ -28,7 +28,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Supplier;
 
-class WorkflowThreadContext {
+public class WorkflowThreadContext {
 
   // Shared runner lock
   private final Lock lock;

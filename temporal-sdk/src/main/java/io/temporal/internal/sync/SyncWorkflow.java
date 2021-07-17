@@ -127,14 +127,11 @@ class SyncWorkflow implements ReplayWorkflow {
             syncContext,
             () -> {
               workflow.initialize();
-              WorkflowInternal.newThread(
-                      false,
-                      DeterministicRunnerImpl.WORKFLOW_ROOT_THREAD_NAME,
-                      () -> workflowProc.run())
+              WorkflowInternal.newWorkflowMethodThread(
+                      () -> workflowProc.run(), DeterministicRunnerImpl.WORKFLOW_MAIN_THREAD_NAME)
                   .start();
             },
             cache);
-    runner.setInterceptorHead(syncContext.getWorkflowInterceptor());
   }
 
   @Override

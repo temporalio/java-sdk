@@ -19,6 +19,8 @@
 
 package io.temporal.common.interceptors;
 
+import javax.annotation.Nullable;
+
 /**
  * Intercepts calls to the workflow execution. Executes under workflow context. So all the
  * restrictions on the workflow code should be obeyed.
@@ -128,4 +130,24 @@ public interface WorkflowInboundCallsInterceptor {
 
   /** Called when a workflow is queried. */
   QueryOutput handleQuery(QueryInput input);
+
+  /**
+   * Intercepts creation of the workflow main method thread
+   *
+   * @param runnable thread function to run
+   * @param name name of the thread, optional
+   * @return created workflow thread. Should be treated as a pass-through object that shouldn't be
+   *     manipulated in any way by the interceptor code.
+   */
+  Object newWorkflowMethodThread(Runnable runnable, @Nullable String name);
+
+  /**
+   * Intercepts creation of the workflow callback thread
+   *
+   * @param runnable thread function to run
+   * @param name name of the thread, optional
+   * @return created workflow thread. Should be treated as a pass-through object that shouldn't be
+   *     manipulated in any way by the interceptor code.
+   */
+  Object newCallbackThread(Runnable runnable, @Nullable String name);
 }

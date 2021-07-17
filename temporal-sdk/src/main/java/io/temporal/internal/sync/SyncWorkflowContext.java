@@ -82,6 +82,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Supplier;
+import javax.annotation.Nullable;
 
 final class SyncWorkflowContext implements WorkflowOutboundCallsInterceptor {
 
@@ -92,7 +93,8 @@ final class SyncWorkflowContext implements WorkflowOutboundCallsInterceptor {
   private final QueryDispatcher queryDispatcher;
   private final Optional<Payloads> lastCompletionResult;
   private final Optional<Failure> lastFailure;
-  private WorkflowOutboundCallsInterceptor headInterceptor;
+  private WorkflowInboundCallsInterceptor headInboundInterceptor;
+  private WorkflowOutboundCallsInterceptor headOutboundInterceptor;
   private DeterministicRunner runner;
 
   private ActivityOptions defaultActivityOptions = null;
@@ -139,15 +141,33 @@ final class SyncWorkflowContext implements WorkflowOutboundCallsInterceptor {
     return runner;
   }
 
-  public WorkflowOutboundCallsInterceptor getWorkflowInterceptor() {
+  public WorkflowOutboundCallsInterceptor getWorkflowOutboundInterceptor() {
     // This is needed for unit tests that create DeterministicRunner directly.
-    return headInterceptor == null ? this : headInterceptor;
+    return headOutboundInterceptor == null ? this : headOutboundInterceptor;
   }
 
-  public void setHeadInterceptor(WorkflowOutboundCallsInterceptor head) {
-    if (headInterceptor == null) {
-      runner.setInterceptorHead(head);
-      this.headInterceptor = head;
+  public WorkflowInboundCallsInterceptor getWorkflowInboundInterceptor() {
+    // This is needed for unit tests that create DeterministicRunner directly.
+    return headInboundInterceptor == null
+        ? new BaseRootWorkflowInboundCallsInterceptor(this)
+        : headInboundInterceptor;
+  }
+
+  public void initHeadOutboundCallsInterceptor(WorkflowOutboundCallsInterceptor head) {
+    if (headOutboundInterceptor == null) {
+      headOutboundInterceptor = head;
+    } else {
+      throw new IllegalStateException("headOutboundInterceptor can be initialized only once");
+    }
+  }
+
+  public void initHeadInboundCallsInterceptor(WorkflowInboundCallsInterceptor head) {
+    if (headInboundInterceptor == null) {
+      headInboundInterceptor = head;
+      signalDispatcher.setInboundCallsInterceptor(head);
+      queryDispatcher.setInboundCallsInterceptor(head);
+    } else {
+      throw new IllegalStateException("headInboundInterceptor can be initialized only once");
     }
   }
 
@@ -226,11 +246,6 @@ final class SyncWorkflowContext implements WorkflowOutboundCallsInterceptor {
 
   public Optional<Payloads> handleQuery(String queryName, Optional<Payloads> input) {
     return queryDispatcher.handleQuery(queryName, input);
-  }
-
-  public void setHeadInboundCallsInterceptor(WorkflowInboundCallsInterceptor inbound) {
-    signalDispatcher.setInboundCallsInterceptor(inbound);
-    queryDispatcher.setInboundCallsInterceptor(inbound);
   }
 
   private class ActivityCallback {
@@ -824,9 +839,17 @@ final class SyncWorkflowContext implements WorkflowOutboundCallsInterceptor {
     context.upsertSearchAttributes(attr);
   }
 
+  public Object newWorkflowMethodThreadIntercepted(Runnable runnable, @Nullable String name) {
+    return runner.newWorkflowThread(runnable, false, name);
+  }
+
+  public Object newWorkflowCallbackThreadIntercepted(Runnable runnable, @Nullable String name) {
+    return runner.newCallbackThread(runnable, name);
+  }
+
   @Override
-  public Object newThread(Runnable runnable, boolean detached, String name) {
-    return runner.newThread(runnable, detached, name);
+  public Object newChildThread(Runnable runnable, boolean detached, String name) {
+    return runner.newWorkflowThread(runnable, detached, name);
   }
 
   @Override

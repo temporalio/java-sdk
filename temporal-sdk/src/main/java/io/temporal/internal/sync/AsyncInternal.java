@@ -293,15 +293,15 @@ public final class AsyncInternal {
       }
     } else {
       CompletablePromise<R> result = Workflow.newPromise();
-      WorkflowInternal.newThread(
-              false,
+      WorkflowThread.newThread(
               () -> {
                 try {
                   result.complete(func.apply());
                 } catch (Exception e) {
                   result.completeExceptionally(Workflow.wrap(e));
                 }
-              })
+              },
+              false)
           .start();
       return result;
     }

@@ -261,7 +261,6 @@ final class POJOWorkflowImplementationFactory implements ReplayWorkflowFactory {
     private final String workflowName;
     private final Method workflowMethod;
     private final Class<?> workflowImplementationClass;
-    private Object workflow;
     private WorkflowInboundCallsInterceptor workflowInvoker;
 
     public POJOWorkflowImplementation(
@@ -278,7 +277,7 @@ final class POJOWorkflowImplementationFactory implements ReplayWorkflowFactory {
       for (WorkerInterceptor workerInterceptor : workerInterceptors) {
         workflowInvoker = workerInterceptor.interceptWorkflow(workflowInvoker);
       }
-      workflowContext.setHeadInboundCallsInterceptor(workflowInvoker);
+      workflowContext.initHeadInboundCallsInterceptor(workflowInvoker);
       workflowInvoker.init(workflowContext);
     }
 
@@ -300,35 +299,19 @@ final class POJOWorkflowImplementationFactory implements ReplayWorkflowFactory {
       return dataConverter.toPayloads(result.getResult());
     }
 
-    private void newInstance() {
-      if (workflow != null) {
-        throw new IllegalStateException("Already called");
-      }
-      Func<?> factory = workflowImplementationFactories.get(workflowImplementationClass);
-      if (factory != null) {
-        workflow = factory.apply();
-      } else {
-        try {
-          workflow = workflowImplementationClass.getDeclaredConstructor().newInstance();
-        } catch (NoSuchMethodException
-            | InstantiationException
-            | IllegalAccessException
-            | InvocationTargetException e) {
-          // Error to fail workflow task as this can be fixed by a new deployment.
-          throw new Error(
-              "Failure instantiating workflow implementation class "
-                  + workflowImplementationClass.getName(),
-              e);
-        }
-      }
-    }
-
-    private class RootWorkflowInboundCallsInterceptor implements WorkflowInboundCallsInterceptor {
-
-      private final SyncWorkflowContext workflowContext;
+    private class RootWorkflowInboundCallsInterceptor
+        extends BaseRootWorkflowInboundCallsInterceptor {
+      private Object workflow;
 
       public RootWorkflowInboundCallsInterceptor(SyncWorkflowContext workflowContext) {
-        this.workflowContext = workflowContext;
+        super(workflowContext);
+      }
+
+      @Override
+      public void init(WorkflowOutboundCallsInterceptor outboundCalls) {
+        super.init(outboundCalls);
+        newInstance();
+        WorkflowInternal.registerListener(workflow);
       }
 
       @Override
@@ -381,21 +364,24 @@ final class POJOWorkflowImplementationFactory implements ReplayWorkflowFactory {
             exception);
       }
 
-      @Override
-      public void init(WorkflowOutboundCallsInterceptor outboundCalls) {
-        WorkflowInternal.getRootWorkflowContext().setHeadInterceptor(outboundCalls);
-        newInstance();
-        WorkflowInternal.registerListener(workflow);
-      }
-
-      @Override
-      public void handleSignal(SignalInput input) {
-        workflowContext.handleInterceptedSignal(input);
-      }
-
-      @Override
-      public QueryOutput handleQuery(QueryInput input) {
-        return workflowContext.handleInterceptedQuery(input);
+      protected void newInstance() {
+        Func<?> factory = workflowImplementationFactories.get(workflowImplementationClass);
+        if (factory != null) {
+          workflow = factory.apply();
+        } else {
+          try {
+            workflow = workflowImplementationClass.getDeclaredConstructor().newInstance();
+          } catch (NoSuchMethodException
+              | InstantiationException
+              | IllegalAccessException
+              | InvocationTargetException e) {
+            // Error to fail workflow task as this can be fixed by a new deployment.
+            throw new Error(
+                "Failure instantiating workflow implementation class "
+                    + workflowImplementationClass.getName(),
+                e);
+          }
+        }
       }
     }
   }

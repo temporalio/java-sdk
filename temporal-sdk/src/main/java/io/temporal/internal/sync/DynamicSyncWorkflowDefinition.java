@@ -37,7 +37,6 @@ final class DynamicSyncWorkflowDefinition implements SyncWorkflowDefinition {
   private final WorkerInterceptor[] workerInterceptors;
   private final DataConverter dataConverter;
   private WorkflowInboundCallsInterceptor workflowInvoker;
-  private DynamicWorkflow workflow;
 
   public DynamicSyncWorkflowDefinition(
       Functions.Func<? extends DynamicWorkflow> factory,
@@ -55,7 +54,7 @@ final class DynamicSyncWorkflowDefinition implements SyncWorkflowDefinition {
     for (WorkerInterceptor workerInterceptor : workerInterceptors) {
       workflowInvoker = workerInterceptor.interceptWorkflow(workflowInvoker);
     }
-    workflowContext.setHeadInboundCallsInterceptor(workflowInvoker);
+    workflowContext.initHeadInboundCallsInterceptor(workflowInvoker);
     workflowInvoker.init(workflowContext);
   }
 
@@ -68,16 +67,17 @@ final class DynamicSyncWorkflowDefinition implements SyncWorkflowDefinition {
     return dataConverter.toPayloads(result.getResult());
   }
 
-  private class RootWorkflowInboundCallsInterceptor implements WorkflowInboundCallsInterceptor {
-    private final SyncWorkflowContext workflowContext;
+  private class RootWorkflowInboundCallsInterceptor
+      extends BaseRootWorkflowInboundCallsInterceptor {
+    private DynamicWorkflow workflow;
 
     public RootWorkflowInboundCallsInterceptor(SyncWorkflowContext workflowContext) {
-      this.workflowContext = workflowContext;
+      super(workflowContext);
     }
 
     @Override
     public void init(WorkflowOutboundCallsInterceptor outboundCalls) {
-      WorkflowInternal.getRootWorkflowContext().setHeadInterceptor(outboundCalls);
+      super.init(outboundCalls);
       newInstance();
       WorkflowInternal.registerListener(workflow);
     }
@@ -86,16 +86,6 @@ final class DynamicSyncWorkflowDefinition implements SyncWorkflowDefinition {
     public WorkflowOutput execute(WorkflowInput input) {
       Object result = workflow.execute((EncodedValues) input.getArguments()[0]);
       return new WorkflowOutput(result);
-    }
-
-    @Override
-    public void handleSignal(SignalInput input) {
-      workflowContext.handleInterceptedSignal(input);
-    }
-
-    @Override
-    public QueryOutput handleQuery(QueryInput input) {
-      return workflowContext.handleInterceptedQuery(input);
     }
 
     private void newInstance() {

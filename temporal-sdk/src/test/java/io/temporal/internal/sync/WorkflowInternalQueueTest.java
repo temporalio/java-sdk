@@ -49,21 +49,21 @@ public class WorkflowInternalQueueTest {
             () -> {
               WorkflowQueue<Boolean> f = WorkflowInternal.newWorkflowQueue(1);
               trace.add("root begin");
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread1 begin");
                         assertTrue(f.take());
                         trace.add("thread1 take success");
-                      })
+                      },
+                      false)
                   .start();
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread2 begin");
                         f.put(true);
                         trace.add("thread2 put success");
-                      })
+                      },
+                      false)
                   .start();
               trace.add("root done");
             });
@@ -88,8 +88,7 @@ public class WorkflowInternalQueueTest {
             () -> {
               WorkflowQueue<Boolean> f = WorkflowInternal.newWorkflowQueue(1);
               trace.add("root begin");
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread1 begin");
                         try {
@@ -98,7 +97,8 @@ public class WorkflowInternalQueueTest {
                           trace.add("thread1 CanceledException");
                         }
                         trace.add("thread1 done");
-                      })
+                      },
+                      false)
                   .start();
               trace.add("root done");
             });
@@ -121,8 +121,7 @@ public class WorkflowInternalQueueTest {
             () -> {
               WorkflowQueue<Boolean> f = WorkflowInternal.newWorkflowQueue(1);
               trace.add("root begin");
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread1 begin");
                         try {
@@ -131,7 +130,8 @@ public class WorkflowInternalQueueTest {
                           trace.add("thread1 CanceledFailure");
                         }
                         trace.add("thread1 done");
-                      })
+                      },
+                      false)
                   .start();
               trace.add("root done");
             });
@@ -161,8 +161,7 @@ public class WorkflowInternalQueueTest {
       WorkflowQueue<Boolean> f = WorkflowInternal.newWorkflowQueue(1);
       trace.add("root begin");
       WorkflowThread thread1 =
-          WorkflowInternal.newThread(
-              false,
+          WorkflowThread.newThread(
               () -> {
                 trace.add("thread1 begin");
                 Workflow.sleep(2000);
@@ -170,19 +169,20 @@ public class WorkflowInternalQueueTest {
                 trace.add("thread1 take1 success");
                 assertFalse(f.take());
                 trace.add("thread1 take2 success");
-              });
+              },
+              false);
 
       thread1.start();
       WorkflowThread thread2 =
-          WorkflowInternal.newThread(
-              false,
+          WorkflowThread.newThread(
               () -> {
                 trace.add("thread2 begin");
                 f.put(true);
                 trace.add("thread2 put1 success");
                 f.put(false);
                 trace.add("thread2 put2 success");
-              });
+              },
+              false);
       thread2.start();
       trace.add("root done");
       Workflow.await(() -> thread1.isDone() && thread2.isDone());
@@ -276,8 +276,7 @@ public class WorkflowInternalQueueTest {
             () -> {
               WorkflowQueue<Boolean> f = WorkflowInternal.newWorkflowQueue(1);
               trace.add("root begin");
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread1 begin");
                         try {
@@ -287,7 +286,8 @@ public class WorkflowInternalQueueTest {
                           trace.add("thread1 CanceledFailure");
                         }
                         trace.add("thread1 done");
-                      })
+                      },
+                      false)
                   .start();
               trace.add("root done");
             });
@@ -310,8 +310,7 @@ public class WorkflowInternalQueueTest {
             () -> {
               WorkflowQueue<Boolean> f = WorkflowInternal.newWorkflowQueue(1);
               trace.add("root begin");
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         trace.add("thread1 begin");
                         try {
@@ -321,7 +320,8 @@ public class WorkflowInternalQueueTest {
                           trace.add("thread1 CanceledFailure");
                         }
                         trace.add("thread1 done");
-                      })
+                      },
+                      false)
                   .start();
               trace.add("root done");
             });
@@ -344,8 +344,7 @@ public class WorkflowInternalQueueTest {
             () -> {
               WorkflowQueue<Integer> queue = WorkflowInternal.newWorkflowQueue(1);
               trace.add("root begin");
-              WorkflowInternal.newThread(
-                      false,
+              WorkflowThread.newThread(
                       () -> {
                         QueueConsumer<String> mapped = queue.map((s) -> s + "-mapped");
                         trace.add("thread1 begin");
@@ -353,7 +352,8 @@ public class WorkflowInternalQueueTest {
                           trace.add("thread1 " + mapped.take());
                         }
                         trace.add("thread1 done");
-                      })
+                      },
+                      false)
                   .start();
               trace.add("root thread1 started");
               for (int i = 0; i < 10; i++) {

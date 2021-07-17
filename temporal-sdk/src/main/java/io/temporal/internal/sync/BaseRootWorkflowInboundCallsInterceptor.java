@@ -17,43 +17,45 @@
  *  permissions and limitations under the License.
  */
 
-package io.temporal.common.interceptors;
+package io.temporal.internal.sync;
 
-/** Convenience base class for WorkflowInboundCallsInterceptor implementations. */
-public class WorkflowInboundCallsInterceptorBase implements WorkflowInboundCallsInterceptor {
-  private final WorkflowInboundCallsInterceptor next;
+import io.temporal.common.interceptors.WorkflowInboundCallsInterceptor;
+import io.temporal.common.interceptors.WorkflowOutboundCallsInterceptor;
 
-  public WorkflowInboundCallsInterceptorBase(WorkflowInboundCallsInterceptor next) {
-    this.next = next;
+public class BaseRootWorkflowInboundCallsInterceptor implements WorkflowInboundCallsInterceptor {
+  protected final SyncWorkflowContext workflowContext;
+
+  public BaseRootWorkflowInboundCallsInterceptor(SyncWorkflowContext workflowContext) {
+    this.workflowContext = workflowContext;
   }
 
   @Override
   public void init(WorkflowOutboundCallsInterceptor outboundCalls) {
-    next.init(outboundCalls);
+    workflowContext.initHeadOutboundCallsInterceptor(outboundCalls);
   }
 
   @Override
   public WorkflowOutput execute(WorkflowInput input) {
-    return next.execute(input);
+    throw new UnsupportedOperationException();
   }
 
   @Override
   public void handleSignal(SignalInput input) {
-    next.handleSignal(input);
+    workflowContext.handleInterceptedSignal(input);
   }
 
   @Override
   public QueryOutput handleQuery(QueryInput input) {
-    return next.handleQuery(input);
+    return workflowContext.handleInterceptedQuery(input);
   }
 
   @Override
   public Object newWorkflowMethodThread(Runnable runnable, String name) {
-    return next.newWorkflowMethodThread(runnable, name);
+    return workflowContext.newWorkflowMethodThreadIntercepted(runnable, name);
   }
 
   @Override
   public Object newCallbackThread(Runnable runnable, String name) {
-    return next.newCallbackThread(runnable, name);
+    return workflowContext.newWorkflowCallbackThreadIntercepted(runnable, name);
   }
 }

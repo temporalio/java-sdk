@@ -456,7 +456,7 @@ public final class TestActivityEnvironmentInternal implements TestActivityEnviro
     }
 
     @Override
-    public Object newThread(Runnable runnable, boolean detached, String name) {
+    public Object newChildThread(Runnable runnable, boolean detached, String name) {
       throw new UnsupportedOperationException("not implemented");
     }
 
