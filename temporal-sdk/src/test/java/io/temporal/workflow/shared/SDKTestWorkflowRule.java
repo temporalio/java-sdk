@@ -50,6 +50,7 @@ import io.temporal.workflow.Functions;
 import java.io.File;
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -160,6 +161,16 @@ public class SDKTestWorkflowRule implements TestRule {
 
     public Builder setTestTimeoutSeconds(long testTimeoutSeconds) {
       testWorkflowRuleBuilder.setTestTimeoutSeconds(testTimeoutSeconds);
+      return this;
+    }
+
+    public Builder setInitialTimeMillis(long initialTimeMillis) {
+      testWorkflowRuleBuilder.setInitialTimeMillis(initialTimeMillis);
+      return this;
+    }
+
+    public Builder setInitialTime(Instant initialTime) {
+      testWorkflowRuleBuilder.setInitialTime(initialTime);
       return this;
     }
 
