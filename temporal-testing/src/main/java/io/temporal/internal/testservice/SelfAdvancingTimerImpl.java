@@ -23,10 +23,7 @@ import com.google.common.util.concurrent.Uninterruptibles;
 import io.temporal.workflow.Functions;
 import java.sql.Timestamp;
 import java.time.Duration;
-import java.util.Comparator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.PriorityQueue;
+import java.util.*;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy;
@@ -97,7 +94,13 @@ final class SelfAdvancingTimerImpl implements SelfAdvancingTimer {
       while (!Thread.currentThread().isInterrupted()) {
         updateTimeLocked();
         if (!emptyQueue && tasks.isEmpty()) {
-          lockTimeSkippingLocked("runLocked"); // Switching to wall time when no tasks scheduled
+          if (timeLockOnEmptyQueueHandle != null) {
+            throw new IllegalStateException(
+                "SelfAdvancingTimerImpl should have a taken time lock when queue is not empty, but handle is not null");
+          }
+          // Switching to wall time when no tasks scheduled
+          timeLockOnEmptyQueueHandle =
+              lockTimeSkippingLocked("SelfAdvancingTimerImpl runLocked empty-queue");
           emptyQueue = true;
         }
         TimerTask peekedTask = tasks.peek();
@@ -181,6 +184,11 @@ final class SelfAdvancingTimerImpl implements SelfAdvancingTimer {
 
     @Override
     public void unlock() {
+      unlock(null);
+    }
+
+    @Override
+    public void unlock(String caller) {
       lock.lock();
       try {
         unlockFromHandleLocked();
@@ -191,7 +199,7 @@ final class SelfAdvancingTimerImpl implements SelfAdvancingTimer {
     }
 
     private void unlockFromHandleLocked() {
-      Boolean removed = lockEvents.remove(event);
+      boolean removed = lockEvents.remove(event);
       if (!removed) {
         throw new IllegalStateException("Unbalanced lock and unlock calls");
       }
@@ -225,12 +233,13 @@ final class SelfAdvancingTimerImpl implements SelfAdvancingTimer {
   private final PriorityQueue<TimerTask> tasks =
       new PriorityQueue<>(Comparator.comparing(TimerTask::getExecutionTime));
   private final Thread timerPump = new Thread(new TimerPump(), "SelfAdvancingTimer Pump");
+  private LockHandle timeLockOnEmptyQueueHandle;
 
   public SelfAdvancingTimerImpl(long initialTime) {
     currentTime = initialTime == 0 ? System.currentTimeMillis() : initialTime;
     executor.setRejectedExecutionHandler(new CallerRunsPolicy());
     // Queue is initially empty. The code assumes that in this case skipping is already locked.
-    lockTimeSkipping("SelfAdvancingTimerImpl constructor");
+    timeLockOnEmptyQueueHandle = lockTimeSkipping("SelfAdvancingTimerImpl constructor empty-queue");
     timerPump.start();
   }
 
@@ -277,7 +286,13 @@ final class SelfAdvancingTimerImpl implements SelfAdvancingTimer {
       tasks.add(timerTask);
       // Locked when queue became empty
       if (tasks.size() == 1 && emptyQueue) {
-        unlockTimeSkippingLocked("schedule task for " + taskInfo);
+        if (timeLockOnEmptyQueueHandle == null) {
+          throw new IllegalStateException(
+              "SelfAdvancingTimerImpl should take a lock and get a handle when queue is empty, but handle is null");
+        }
+        timeLockOnEmptyQueueHandle.unlock(
+            "SelfAdvancingTimerImpl schedule non-empty-queue, task: " + taskInfo);
+        timeLockOnEmptyQueueHandle = null;
         emptyQueue = false;
       }
       condition.signal();

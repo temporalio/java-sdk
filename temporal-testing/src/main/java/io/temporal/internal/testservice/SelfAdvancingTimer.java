@@ -23,6 +23,7 @@ import io.temporal.workflow.Functions;
 import java.time.Duration;
 import java.util.List;
 import java.util.function.LongSupplier;
+import javax.annotation.Nullable;
 
 /**
  * Timer service that automatically forwards current time to the next task time when is not locked
@@ -66,4 +67,6 @@ interface SelfAdvancingTimer {
 
 interface LockHandle {
   void unlock();
+
+  void unlock(@Nullable String caller);
 }
