@@ -19,8 +19,14 @@
 
 package io.temporal.testing;
 
+import static org.junit.Assert.*;
+
+import io.temporal.api.enums.v1.TimeoutType;
 import io.temporal.client.WorkflowClient;
+import io.temporal.client.WorkflowFailedException;
 import io.temporal.client.WorkflowOptions;
+import io.temporal.client.WorkflowStub;
+import io.temporal.failure.TimeoutFailure;
 import io.temporal.worker.Worker;
 import io.temporal.workflow.SignalMethod;
 import io.temporal.workflow.Workflow;
@@ -57,7 +63,7 @@ public class TestWorkflowEnvironmentSleepTest {
     void signal();
   }
 
-  public static class ExampleWorkflowImpl implements ExampleWorkflow {
+  public static class HingingWorkflowWithSignalImpl implements ExampleWorkflow {
     @Override
     public void execute() {
       Workflow.sleep(Duration.ofMinutes(20));
@@ -70,7 +76,6 @@ public class TestWorkflowEnvironmentSleepTest {
   private TestWorkflowEnvironment testEnv;
   private Worker worker;
   private WorkflowClient client;
-  private ExampleWorkflow workflow;
   private static final String WORKFLOW_TASK_QUEUE = "EXAMPLE";
 
   @Before
@@ -78,23 +83,49 @@ public class TestWorkflowEnvironmentSleepTest {
     testEnv = TestWorkflowEnvironment.newInstance();
     worker = testEnv.newWorker(WORKFLOW_TASK_QUEUE);
     client = testEnv.getWorkflowClient();
-    worker.registerWorkflowImplementationTypes(ExampleWorkflowImpl.class);
-    workflow =
-        client.newWorkflowStub(
-            ExampleWorkflow.class,
-            WorkflowOptions.newBuilder().setTaskQueue(WORKFLOW_TASK_QUEUE).build());
+    worker.registerWorkflowImplementationTypes(HingingWorkflowWithSignalImpl.class);
     testEnv.start();
-  }
-
-  @Test(timeout = 2000)
-  public void testSignalAfterStartThenSleep() {
-    WorkflowClient.start(workflow::execute);
-    workflow.signal();
-    testEnv.sleep(Duration.ofMinutes(50L));
   }
 
   @After
   public void tearDown() {
     testEnv.close();
+  }
+
+  @Test(timeout = 2000)
+  public void testSignalAfterStartThenSleep() {
+    ExampleWorkflow workflow =
+        client.newWorkflowStub(
+            ExampleWorkflow.class,
+            WorkflowOptions.newBuilder().setTaskQueue(WORKFLOW_TASK_QUEUE).build());
+    WorkflowClient.start(workflow::execute);
+    workflow.signal();
+    testEnv.sleep(Duration.ofMinutes(50L));
+  }
+
+  @Test
+  public void testWorkflowTimeoutDuringSleep() {
+    ExampleWorkflow workflow =
+        client.newWorkflowStub(
+            ExampleWorkflow.class,
+            WorkflowOptions.newBuilder()
+                .setWorkflowExecutionTimeout(Duration.ofMinutes(3))
+                .setTaskQueue(WORKFLOW_TASK_QUEUE)
+                .build());
+
+    WorkflowClient.start(workflow::execute);
+
+    testEnv.sleep(Duration.ofMinutes(11L));
+
+    WorkflowStub workflowStub = WorkflowStub.fromTyped(workflow);
+    try {
+      workflowStub.getResult(Void.class);
+      fail("Workflow should fail with timeout exception");
+    } catch (WorkflowFailedException e) {
+      Throwable cause = e.getCause();
+      assertTrue(cause instanceof TimeoutFailure);
+      assertEquals(
+          TimeoutType.TIMEOUT_TYPE_START_TO_CLOSE, ((TimeoutFailure) cause).getTimeoutType());
+    }
   }
 }

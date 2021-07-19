@@ -175,11 +175,12 @@ class TestWorkflowStoreImpl implements TestWorkflowStore {
       workflowTaskQueues = new HashMap<>();
 
   private final SelfAdvancingTimer timerService;
+  private LockHandle emptyHistoryLockHandle;
 
   public TestWorkflowStoreImpl(long initialTimeMillis) {
     timerService = new SelfAdvancingTimerImpl(initialTimeMillis);
     // locked until the first save
-    timerService.lockTimeSkipping("TestWorkflowStoreImpl constructor");
+    emptyHistoryLockHandle = timerService.lockTimeSkipping("TestWorkflowStoreImpl constructor");
   }
 
   @Override
@@ -196,7 +197,6 @@ class TestWorkflowStoreImpl implements TestWorkflowStore {
   public long save(RequestContext ctx) {
     long result;
     lock.lock();
-    boolean historiesEmpty = histories.isEmpty();
     try {
       ExecutionId executionId = ctx.getExecutionId();
       HistoryStore history = histories.get(executionId);
@@ -215,9 +215,10 @@ class TestWorkflowStoreImpl implements TestWorkflowStore {
       timerService.updateLocks(ctx.getTimerLocks());
       ctx.fireCallbacks(history.getEventsLocked().size());
     } finally {
-      if (historiesEmpty && !histories.isEmpty()) {
-        timerService.unlockTimeSkipping(
-            "TestWorkflowStoreImpl save"); // Initially locked in the constructor
+      if (emptyHistoryLockHandle != null && !histories.isEmpty()) {
+        // Initially locked in the constructor
+        emptyHistoryLockHandle.unlock("TestWorkflowStoreImpl first save");
+        emptyHistoryLockHandle = null;
       }
       lock.unlock();
     }

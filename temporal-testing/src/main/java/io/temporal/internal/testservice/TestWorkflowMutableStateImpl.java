@@ -1637,11 +1637,13 @@ class TestWorkflowMutableStateImpl implements TestWorkflowMutableState {
           if (activity.getState() != State.INITIATED && data.getAttempt() != attempt) {
             return;
           }
-          selfAdvancingTimer.lockTimeSkipping(
-              "activityRetryTimer " + activity.getData().scheduledEvent.getActivityId());
+          LockHandle lockHandle =
+              selfAdvancingTimer.lockTimeSkipping(
+                  "activityRetryTimer " + activity.getData().scheduledEvent.getActivityId());
           boolean unlockTimer = false;
           try {
             update(ctx1 -> ctx1.addActivityTask(data.activityTask));
+            // shouldn't we unlock timer here too to avoid the leak?
           } catch (StatusRuntimeException e) {
             // NOT_FOUND is expected as timers are not removed
             if (e.getStatus().getCode() != Status.Code.NOT_FOUND) {
@@ -1655,7 +1657,7 @@ class TestWorkflowMutableStateImpl implements TestWorkflowMutableState {
           } finally {
             if (unlockTimer) {
               // Allow time skipping when waiting for an activity retry
-              selfAdvancingTimer.unlockTimeSkipping(
+              lockHandle.unlock(
                   "activityRetryTimer " + activity.getData().scheduledEvent.getActivityId());
             }
           }
@@ -1810,7 +1812,7 @@ class TestWorkflowMutableStateImpl implements TestWorkflowMutableState {
             // TODO(maxim): real retry status
             workflow.action(StateMachines.Action.TIME_OUT, ctx, RetryState.RETRY_STATE_TIMEOUT, 0);
             workflowTaskStateMachine.getData().workflowCompleted = true;
-            if (parent != null) {
+            if (parent.isPresent()) {
               ctx.lockTimer("timeoutWorkflow notify parent"); // unlocked by the parent
             }
             ForkJoinPool.commonPool().execute(() -> reportWorkflowTimeoutToParent(ctx));
