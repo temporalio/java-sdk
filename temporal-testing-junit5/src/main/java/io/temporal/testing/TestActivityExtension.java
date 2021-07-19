@@ -19,6 +19,7 @@
 
 package io.temporal.testing;
 
+import io.temporal.activity.DynamicActivity;
 import io.temporal.common.metadata.POJOActivityImplMetadata;
 import io.temporal.common.metadata.POJOActivityInterfaceMetadata;
 import java.lang.reflect.Constructor;
@@ -67,6 +68,8 @@ public class TestActivityExtension
 
   private final Set<Class<?>> supportedParameterTypes = new HashSet<>();
 
+  private boolean includesDynamicActivity;
+
   private TestActivityExtension(Builder builder) {
     testEnvironmentOptions = builder.testEnvironmentOptions;
     activityImplementations = builder.activityImplementations;
@@ -74,6 +77,10 @@ public class TestActivityExtension
     supportedParameterTypes.add(TestActivityEnvironment.class);
 
     for (Object activity : activityImplementations) {
+      if (DynamicActivity.class.isAssignableFrom(activity.getClass())) {
+        includesDynamicActivity = true;
+        continue;
+      }
       POJOActivityImplMetadata metadata = POJOActivityImplMetadata.newInstance(activity.getClass());
       for (POJOActivityInterfaceMetadata activityInterface : metadata.getActivityInterfaces()) {
         supportedParameterTypes.add(activityInterface.getInterfaceClass());
@@ -93,6 +100,10 @@ public class TestActivityExtension
     if (parameterContext.getParameter().getDeclaringExecutable() instanceof Constructor) {
       // Constructor injection is not supported
       return false;
+    }
+
+    if (includesDynamicActivity) {
+      return true;
     }
 
     Class<?> parameterType = parameterContext.getParameter().getType();

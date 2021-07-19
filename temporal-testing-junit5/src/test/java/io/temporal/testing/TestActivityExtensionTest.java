@@ -29,7 +29,7 @@ import io.temporal.activity.ActivityMethod;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-public class ActivityExtensionTest {
+public class TestActivityExtensionTest {
 
   @RegisterExtension
   public static final TestActivityExtension activityExtension =

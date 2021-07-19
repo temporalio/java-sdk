@@ -28,6 +28,7 @@ import io.temporal.serviceclient.WorkflowServiceStubsOptions;
 import io.temporal.worker.Worker;
 import io.temporal.worker.WorkerFactoryOptions;
 import io.temporal.worker.WorkerOptions;
+import io.temporal.workflow.DynamicWorkflow;
 import java.lang.reflect.Constructor;
 import java.time.Instant;
 import java.util.HashSet;
@@ -40,6 +41,7 @@ import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.ParameterResolver;
 import org.junit.jupiter.api.extension.TestWatcher;
+import org.junit.platform.commons.support.AnnotationSupport;
 
 /**
  * JUnit Jupiter extension that simplifies testing of Temporal workflows.
@@ -77,7 +79,7 @@ public class TestWorkflowExtension
 
   private static final String TEST_ENVIRONMENT_KEY = "testEnvironment";
   private static final String WORKER_KEY = "worker";
-  private static final String TASK_QUEUE_KEY = "taskQueue";
+  private static final String WORKFLOW_OPTIONS_KEY = "workflowOptions";
 
   private final WorkerOptions workerOptions;
   private final WorkflowClientOptions workflowClientOptions;
@@ -90,6 +92,7 @@ public class TestWorkflowExtension
   private final long initialTimeMillis;
 
   private final Set<Class<?>> supportedParameterTypes = new HashSet<>();
+  private boolean includesDynamicWorkflow;
 
   private TestWorkflowExtension(Builder builder) {
     workerOptions = builder.workerOptions;
@@ -113,6 +116,10 @@ public class TestWorkflowExtension
     supportedParameterTypes.add(Worker.class);
 
     for (Class<?> workflowType : workflowTypes) {
+      if (DynamicWorkflow.class.isAssignableFrom(workflowType)) {
+        includesDynamicWorkflow = true;
+        continue;
+      }
       POJOWorkflowImplMetadata metadata = POJOWorkflowImplMetadata.newInstance(workflowType);
       for (POJOWorkflowInterfaceMetadata workflowInterface : metadata.getWorkflowInterfaces()) {
         supportedParameterTypes.add(workflowInterface.getInterfaceClass());
@@ -134,6 +141,10 @@ public class TestWorkflowExtension
       return false;
     }
 
+    if (includesDynamicWorkflow) {
+      return true;
+    }
+
     Class<?> parameterType = parameterContext.getParameter().getType();
     return supportedParameterTypes.contains(parameterType);
   }
@@ -143,36 +154,36 @@ public class TestWorkflowExtension
       ParameterContext parameterContext, ExtensionContext extensionContext)
       throws ParameterResolutionException {
 
-    TestWorkflowEnvironment testEnvironment = getTestEnvironment(extensionContext);
-
     Class<?> parameterType = parameterContext.getParameter().getType();
     if (parameterType == TestWorkflowEnvironment.class) {
-      return testEnvironment;
+      return getTestEnvironment(extensionContext);
     } else if (parameterType == WorkflowClient.class) {
-      return testEnvironment.getWorkflowClient();
+      return getTestEnvironment(extensionContext).getWorkflowClient();
     } else if (parameterType == WorkflowOptions.class) {
-      String taskQueue = getTaskQueue(extensionContext);
-      return WorkflowOptions.newBuilder().setTaskQueue(taskQueue).build();
+      return getWorkflowOptions(extensionContext);
     } else if (parameterType == Worker.class) {
       return getWorker(extensionContext);
     } else {
       // Workflow stub
-      String taskQueue = getTaskQueue(extensionContext);
-      WorkflowOptions workflowOptions =
-          WorkflowOptions.newBuilder().setTaskQueue(taskQueue).build();
-      return testEnvironment.getWorkflowClient().newWorkflowStub(parameterType, workflowOptions);
+      return getTestEnvironment(extensionContext)
+          .getWorkflowClient()
+          .newWorkflowStub(parameterType, getWorkflowOptions(extensionContext));
     }
   }
 
   @Override
   public void beforeEach(ExtensionContext context) throws Exception {
+    long currentInitialTimeMillis =
+        AnnotationSupport.findAnnotation(context.getElement(), WorkflowInitialTime.class)
+            .map(annotation -> Instant.parse(annotation.value()).toEpochMilli())
+            .orElse(initialTimeMillis);
     TestEnvironmentOptions testOptions =
         TestEnvironmentOptions.newBuilder()
             .setWorkflowClientOptions(workflowClientOptions)
             .setWorkerFactoryOptions(workerFactoryOptions)
             .setUseExternalService(useExternalService)
             .setTarget(target)
-            .setInitialTimeMillis(initialTimeMillis)
+            .setInitialTimeMillis(currentInitialTimeMillis)
             .build();
     TestWorkflowEnvironment testEnvironment = TestWorkflowEnvironment.newInstance(testOptions);
     String taskQueue =
@@ -187,7 +198,7 @@ public class TestWorkflowExtension
 
     setTestEnvironment(context, testEnvironment);
     setWorker(context, worker);
-    setTaskQueue(context, taskQueue);
+    setWorkflowOptions(context, WorkflowOptions.newBuilder().setTaskQueue(taskQueue).build());
   }
 
   @Override
@@ -219,12 +230,12 @@ public class TestWorkflowExtension
     getStore(context).put(WORKER_KEY, worker);
   }
 
-  private String getTaskQueue(ExtensionContext context) {
-    return getStore(context).get(TASK_QUEUE_KEY, String.class);
+  private WorkflowOptions getWorkflowOptions(ExtensionContext context) {
+    return getStore(context).get(WORKFLOW_OPTIONS_KEY, WorkflowOptions.class);
   }
 
-  private void setTaskQueue(ExtensionContext context, String taskQueue) {
-    getStore(context).put(TASK_QUEUE_KEY, taskQueue);
+  private void setWorkflowOptions(ExtensionContext context, WorkflowOptions taskQueue) {
+    getStore(context).put(WORKFLOW_OPTIONS_KEY, taskQueue);
   }
 
   private ExtensionContext.Store getStore(ExtensionContext context) {
